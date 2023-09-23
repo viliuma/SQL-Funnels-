@@ -1,0 +1,76 @@
+WITH EventRanking AS 
+(
+  SELECT
+    *,
+    RANK() OVER (PARTITION BY user_pseudo_id, event_name ORDER BY  event_timestamp) AS EventRank -- Safer Row_number
+  FROM `turing_data_analytics.raw_events`
+),
+
+CleanedData AS
+(
+  SELECT
+    *
+  FROM EventRanking
+  WHERE EventRank = 1 
+),
+
+EventTotals AS 
+(
+  SELECT 
+    Country,
+    SUM(EventRank) AS NumberOfEvents
+  FROM CleanedData
+  GROUP BY Country
+  ORDER BY 2 DESC
+  LIMIT 3
+),
+
+CountryRanking AS 
+(
+  SELECT 
+    cleandata.event_name AS Event, 
+    eventtotal.NumberOfEvents AS TotalCountryEvents,
+    eventtotal.Country AS Country,
+    Count(eventtotal.NumberOfEvents) AS EventCount,
+    DENSE_RANK() OVER (ORDER BY eventtotal.NumberOfEvents DESC) AS CountryRank,
+    ROW_NUMBER() OVER (PARTITION BY eventtotal.Country ORDER BY  SUM(NumberOfEvents)  DESC) AS EventRanking
+  FROM 
+    CleanedData cleandata
+  JOIN 
+    EventTotals eventtotal 
+  ON 
+    cleandata.Country = eventtotal.Country
+  GROUP BY
+    1,2,3
+  ORDER BY 
+    CountryRank
+),
+PivotingTable AS 
+(
+  SELECT 
+    *
+  FROM
+    (
+      SELECT
+        Event,
+        EventCount, 
+        Country 
+      FROM 
+        CountryRanking
+      WHERE 
+        Event IN ('page_view','view_item','add_to_cart','begin_checkout','purchase')
+    ) Top3Countries
+  PIVOT (SUM(EventCount) FOR Country IN ('United States' AS UnitedStates,'India','Canada'))   
+  ORDER BY 2 DESC
+)
+
+  SELECT 
+    ROW_NUMBER() OVER () AS EventOrder, 
+    *, 
+    CASE WHEN Event = 'page_view' THEN 100 ELSE ROUND((UnitedStates + India + Canada) / (118333 + 24117 + 19296) * 100, 2)END AS FullPercentage, --- DONT HARDCODE NUMBERS
+    CASE WHEN Event = 'page_view' THEN 100 ELSE ROUND (UnitedStates/118333 * 100,2) END AS UnitedStatesDropoff,
+    CASE WHEN Event = 'page_view' THEN 100 ELSE ROUND (India/25331 * 100,2) END AS IndiaDropoff,
+    CASE WHEN Event = 'page_view' THEN 100 ELSE ROUND (Canada/20242 * 100,2) END AS CanadaDropoff
+  FROM 
+    PivotingTable
+  
