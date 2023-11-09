@@ -3,7 +3,7 @@ WITH EventRanking AS
   SELECT
     *,
     RANK() OVER (PARTITION BY user_pseudo_id, event_name ORDER BY  event_timestamp) AS EventRank -- Safer Row_number
-  FROM `turing_data_analytics.raw_events`
+  FROM `data_table`
 ),
 
 CleanedData AS
